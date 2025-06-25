@@ -107,6 +107,12 @@ namespace uart {
             session_.reset();
         }
     }
+    std::string SerialPort::getPortName() {
+        if (!session_.get()) {
+            return "";
+        }
+        return session_->getName();
+    }
 
     void SerialPort::startSendTimer() {
         sendIntervalTimer_.expires_from_now(boost::posix_time::milliseconds(sendInterval_.load()));

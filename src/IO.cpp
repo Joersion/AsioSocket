@@ -61,6 +61,7 @@ namespace io {
 
         // 其他情况视为致命错误，关闭连接
         close(error.what());
+        std::cout << "is error,need close" << std::endl;
         return false;
     }
 

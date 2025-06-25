@@ -81,6 +81,7 @@ namespace uart {
         bool setSendInterval(int interval);
         // 重写关闭方法，防止子类继续重写
         virtual void doClose(const std::string &portName, const std::string &error) override final;
+        std::string getPortName();
 
     private:
         void startSendTimer();

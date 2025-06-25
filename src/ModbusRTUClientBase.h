@@ -32,6 +32,7 @@ namespace modbus::rtu {
     public:
         bool send(uint8_t uuid, uint8_t funcCode, uint16_t startAddr, uint16_t value, const std::string &data = "");
         bool send(uint8_t uuid, uint8_t funcCode, uint16_t startAddr, uint16_t value, const std::vector<uint16_t> &data);
+        void setReadFlag(bool flag);
 
     private:
         void packet(uint8_t uuid, uint8_t funcCode, uint16_t startAddr, uint16_t reqLen, const std::string &data, std::string &reqData);
@@ -40,5 +41,6 @@ namespace modbus::rtu {
     private:
         std::string currentbuf_;
         std::string readBuf_;
+        std::atomic<bool> readFlag_;
     };
 };  // namespace modbus::rtu

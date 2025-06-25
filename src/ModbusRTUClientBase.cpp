@@ -6,7 +6,7 @@
 
 namespace modbus::rtu {
 
-    ModbusRTUClientBase::ModbusRTUClientBase(int timeout) : SerialPort(timeout) {
+    ModbusRTUClientBase::ModbusRTUClientBase(int timeout) : SerialPort(timeout), readFlag_(false) {
     }
 
     ModbusRTUClientBase::~ModbusRTUClientBase() {
@@ -14,6 +14,12 @@ namespace modbus::rtu {
 
     void ModbusRTUClientBase::onRead(const std::string &portName, const char *buf, size_t len, const std::string &error) {
         std::cout << "modbusRTU readData:" << Tool::hex2String(buf, len) << std::endl;
+        if (!readFlag_.load()) {
+            std::cout << "发送前数据过滤..." << std::endl;
+            readBuf_.clear();
+            currentbuf_.clear();
+            return;
+        }
         std::string data;
         if (!error.empty()) {
             onRead("", portName, 0, data, 0x00, error);
@@ -34,7 +40,9 @@ namespace modbus::rtu {
         if (data.length() > 250) {
             return false;
         }
-
+        if (!readFlag_.load()) {
+            readFlag_.store(true);
+        }
         std::string reqData = "";
         packet(uuid, funcCode, startAddr, value, data, reqData);
         std::cout << "modbusRTU sendData:" << Tool::hex2String(reqData.data(), reqData.length()) << std::endl;
@@ -50,6 +58,10 @@ namespace modbus::rtu {
         }
         Tool::tolittle(str);
         return send(uuid, funcCode, startAddr, value, str);
+    }
+
+    void ModbusRTUClientBase::setReadFlag(bool flag) {
+        readFlag_.store(flag);
     }
 
     void ModbusRTUClientBase::packet(uint8_t uuid, uint8_t funcCode, uint16_t startAddr, uint16_t reqLen, const std::string &data,
@@ -113,7 +125,7 @@ namespace modbus::rtu {
                 }
                 uint16_t crc = Tool::modbus_crc16(std::string(currentbuf_.data(), currentbuf_.length() - 2));
                 if (currentbuf_.length() > 2 && *(uint16_t *)(currentbuf_.data() + currentbuf_.length() - 2) != crc) {
-                    std::cout << "crc error ,local crc:" << std::hex << crc << ",remote crc:" << Tool::ntohs2(readBuf_.data() + dataLen)
+                    std::cout << "crc error ,local crc:" << std::hex << crc << ",remote crc:" << Tool::ntohs2(readBuf_.data() + dataLen) << std::dec
                               << ",readLen:" << readBuf_.length() << std::endl;
 
                     std::cout << "crc error ,currentDta:" << Tool::hex2String(currentbuf_.data(), currentbuf_.length()) << std::endl;
@@ -153,8 +165,8 @@ namespace modbus::rtu {
                 uint16_t crc = Tool::modbus_crc16(std::string(currentbuf_.data(), currentbuf_.length() - 2));
                 if (currentbuf_.length() > 2 && *(uint16_t *)(currentbuf_.data() + currentbuf_.length() - 2) != crc) {
                     std::cout << "crc error ,local crc:" << std::hex << crc
-                              << ",remote crc:" << Tool::ntohs2(currentbuf_.data() + currentbuf_.length() - 2) << ",readLen:" << readBuf_.length()
-                              << std::endl;
+                              << ",remote crc:" << Tool::ntohs2(currentbuf_.data() + currentbuf_.length() - 2) << std::dec
+                              << ",readLen:" << readBuf_.length() << std::endl;
 
                     std::cout << "crc error ,currentDta:" << Tool::hex2String(currentbuf_.data(), currentbuf_.length()) << std::endl;
                     currentbuf_.clear();
