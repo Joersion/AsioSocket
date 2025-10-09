@@ -10,6 +10,10 @@ namespace uart {
     enum class Parity { none, odd, even };
     // 控制流
     enum class FlowControl { none, software, hardware };
+    // 通信类型 半双工 和 全双工
+    enum class TransferModel { full, half };
+    // 半双工 状态机
+    enum class HalfStatus { ready, wait };
 
     struct Config {
         int baudRate = 9600;
@@ -17,6 +21,9 @@ namespace uart {
         StopBits stopBits = StopBits::one;
         Parity parity = Parity::none;
         FlowControl flowControl = FlowControl::none;
+        TransferModel model = TransferModel::full;
+        int sendBufSize = 100;  // 发送间隔
+        int HalfStatusTimeout = 5;
     };
 
     class Connection {
@@ -37,6 +44,9 @@ namespace uart {
         virtual void onClose(const std::string &portName, const std::string &error) = 0;
         // 定时器发生之后
         virtual void onTimer(const std::string &portName) = 0;
+        // 半双工超时
+        virtual void onHalfTimeout(const std::string &portName) {
+        }
         // 用于父类
         virtual void doClose(const std::string &portName, const std::string &error) = 0;
     };
@@ -63,6 +73,7 @@ namespace uart {
     private:
         char recvBuf_[IO_BUFFER_MAX_LEN];
         Connection *conn_;
+        std::mutex mtx_;
         boost::asio::serial_port serialPort_;
         std::string portName_;
         Config config_;
@@ -78,7 +89,7 @@ namespace uart {
     public:
         bool open(std::string &err, const std::string &portName, const Config &config);
         bool send(const std::string &data);
-        bool setSendInterval(int interval);
+        bool setSendInterval(int interval, int halfStatusTimeout = 5000);
         // 重写关闭方法，防止子类继续重写
         virtual void doClose(const std::string &portName, const std::string &error) override final;
         std::string getPortName();
@@ -86,15 +97,24 @@ namespace uart {
     private:
         void startSendTimer();
         void doSendTimer();
+        void startHalfTimer();
+
+    protected:
+        void setHalfStatus(HalfStatus status);
 
     private:
         boost::asio::io_context &ioContext_;
         std::shared_ptr<Session> session_;
         bool stop_;
+        // 半双工状态机
+        std::atomic<HalfStatus> halfStatus_;
 
         // 发送间隔
         boost::asio::deadline_timer sendIntervalTimer_;
         std::atomic<int> sendInterval_;
+        // 半双工状态机翻转超时时间
+        boost::asio::deadline_timer halfStatusTimer_;
+        std::atomic<int> halfStatusTimeout_;
         std::queue<std::string> sendBuf_;
         std::mutex sendLock_;
     };

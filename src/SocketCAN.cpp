@@ -140,6 +140,9 @@ namespace can {
 
     CANTransceiver::~CANTransceiver() {
         stop_ = true;
+        if (session_.get()) {
+            session_->close("");
+        }
     }
 
     bool CANTransceiver::open(std::string &error, const std::string &canName) {

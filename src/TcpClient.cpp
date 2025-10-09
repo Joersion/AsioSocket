@@ -35,6 +35,7 @@ namespace net::socket {
 
     void TcpClient::close() {
         reconnectTimeout_.store(0);
+        reconnectTimer_.cancel();
         if (session_) {
             session_->close("");
         }

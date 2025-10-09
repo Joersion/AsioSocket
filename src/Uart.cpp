@@ -8,6 +8,7 @@ namespace uart {
     }
 
     bool Session::open(std::string &err, const std::string &portName, const Config &config) {
+        std::lock_guard<std::mutex> lock(mtx_);
         try {
             if (serialPort_.is_open()) {
                 close("");
@@ -21,6 +22,7 @@ namespace uart {
             serialPort_.set_option(
                 boost::asio::serial_port_base::flow_control((boost::asio::serial_port_base::flow_control::type)config.flowControl));
 
+            config_ = config;
             start();
             return true;
         } catch (const boost::system::system_error &e) {
@@ -30,10 +32,12 @@ namespace uart {
     }
 
     std::string Session::getName() {
+        std::lock_guard<std::mutex> lock(mtx_);
         return portName_;
     }
 
     Config Session::getConfig() {
+        std::lock_guard<std::mutex> lock(mtx_);
         return config_;
     }
 
@@ -70,11 +74,18 @@ namespace uart {
           session_(std::make_shared<Session>(this, ioContext_, timeout)),
           stop_(false),
           sendInterval_(0),
-          sendIntervalTimer_(boost::asio::make_strand(ioContext_)) {
+          sendIntervalTimer_(boost::asio::make_strand(ioContext_)),
+          halfStatusTimer_(boost::asio::make_strand(ioContext_)),
+          halfStatus_(HalfStatus::ready) {
     }
 
     SerialPort::~SerialPort() {
         stop_ = true;
+        sendInterval_.store(0);
+        sendIntervalTimer_.cancel();
+        if (session_.get()) {
+            session_->close("");
+        }
     }
 
     bool SerialPort::open(std::string &err, const std::string &portName, const Config &config) {
@@ -86,15 +97,20 @@ namespace uart {
             if (sendInterval_.load() == 0) {
                 return session_->send(data.data(), data.length());
             }
+            int sendBufSize = session_->getConfig().sendBufSize;
             std::lock_guard<std::mutex> lock(sendLock_);
+            if (sendBuf_.size() > sendBufSize) {
+                sendBuf_.pop();
+            }
             sendBuf_.push(data);
             return true;
         }
         return session_->send(data.data(), data.length());
     }
 
-    bool SerialPort::setSendInterval(int interval) {
+    bool SerialPort::setSendInterval(int interval, int halfStatusTimeout) {
         sendInterval_.store(interval, std::memory_order_relaxed);
+        halfStatusTimeout_.store(halfStatusTimeout, std::memory_order_relaxed);
         startSendTimer();
         return false;
     }
@@ -107,6 +123,7 @@ namespace uart {
             session_.reset();
         }
     }
+
     std::string SerialPort::getPortName() {
         if (!session_.get()) {
             return "";
@@ -115,11 +132,36 @@ namespace uart {
     }
 
     void SerialPort::startSendTimer() {
+        if (stop_) {
+            return;
+        }
+        sendIntervalTimer_.cancel();
         sendIntervalTimer_.expires_from_now(boost::posix_time::milliseconds(sendInterval_.load()));
         sendIntervalTimer_.async_wait(std::bind(&SerialPort::doSendTimer, this));
     }
 
+    void SerialPort::startHalfTimer() {
+        if (stop_) {
+            return;
+        }
+        halfStatusTimer_.cancel();
+        halfStatusTimer_.expires_from_now(boost::posix_time::milliseconds(halfStatusTimeout_.load()));
+        halfStatusTimer_.async_wait([this]() {
+            if (session_->getConfig().model == TransferModel::full) {
+                return;
+            }
+            if (halfStatus_.load() == HalfStatus::wait) {
+                halfStatus_.store(HalfStatus::ready);
+                onHalfTimeout(session_->getName());
+            }
+        });
+    }
+
     void SerialPort::doSendTimer() {
+        // 半双工需等待状态机翻转,才能发送
+        if (session_->getConfig().model == TransferModel::half && halfStatus_.load() == HalfStatus::wait) {
+            return;
+        }
         std::string data;
         {
             std::lock_guard<std::mutex> lock(sendLock_);
@@ -128,10 +170,24 @@ namespace uart {
                 sendBuf_.pop();
             }
         }
-        if (!data.empty()) {
+        if (!data.empty() && session_.get()) {
             session_->send(data.data(), data.length());
+            if (session_->getConfig().model == TransferModel::half) {
+                setHalfStatus(HalfStatus::wait);
+            }
         }
         startSendTimer();
+    }
+
+    void SerialPort::setHalfStatus(HalfStatus status) {
+        if (session_->getConfig().model == TransferModel::half) {
+            halfStatus_.store(status);
+            if (status == HalfStatus::wait) {
+                startHalfTimer();
+            } else {
+                halfStatusTimer_.cancel();
+            }
+        }
     }
 
 };  // namespace uart

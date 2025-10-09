@@ -101,6 +101,18 @@ namespace gpio {
 
     GPIO::~GPIO() {
         stop_ = true;
+        {
+            std::vector<std::shared_ptr<Session>> tmps;
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                for (auto session : sessions_) {
+                    tmps.emplace_back(session.second);
+                }
+            }
+            for (auto session : tmps) {
+                session->close("");
+            }
+        }
         ::close(epollFd_);
     }
 
@@ -163,17 +175,10 @@ namespace gpio {
             onClose(portName, error);
         }
 
-        std::shared_ptr<Session> session = std::shared_ptr<Session>();
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (sessions_.find(portName) != sessions_.end()) {
-                session = sessions_[portName];
-            }
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (sessions_.find(portName) != sessions_.end()) {
+            sessions_.erase(portName);
         }
-        if (!session.get()) {
-            return;
-        }
-        session.reset();
     }
 
     void GPIO::start() {

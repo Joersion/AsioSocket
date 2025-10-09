@@ -33,6 +33,7 @@ namespace modbus::rtu {
             uint8_t uuid = resps[i].uuid;
             std::cout << "modbusRTU onRead, data:" << Tool::hex2String(resps[i].base.values.data(), resps[i].base.values.length()) << std::endl;
             onRead(resps[i].src, portName, (int)uuid, resps[i].base.values, resps[i].base.errorCode, error);
+            setHalfStatus(uart::HalfStatus::ready);
         }
     }
 
