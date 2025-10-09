@@ -13,7 +13,7 @@ namespace modbus::rtu {
     }
 
     void ModbusRTUClientBase::onRead(const std::string &portName, const char *buf, size_t len, const std::string &error) {
-        std::cout << "modbusRTU readData:" << Tool::hex2String(buf, len) << std::endl;
+        // std::cout << "modbusRTU readData:" << Tool::hex2String(buf, len) << std::endl;
         if (!readFlag_.load()) {
             std::cout << "发送前数据过滤..." << std::endl;
             readBuf_.clear();
@@ -22,6 +22,7 @@ namespace modbus::rtu {
         }
         std::string data;
         if (!error.empty()) {
+            std::cout << "收到错误数据..." << std::endl;
             onRead("", portName, 0, data, 0x00, error);
             readBuf_.clear();
             currentbuf_.clear();
@@ -31,7 +32,7 @@ namespace modbus::rtu {
         unpacket(buf, len, resps);
         for (int i = 0; i < resps.size(); i++) {
             uint8_t uuid = resps[i].uuid;
-            std::cout << "modbusRTU onRead, data:" << Tool::hex2String(resps[i].base.values.data(), resps[i].base.values.length()) << std::endl;
+            // std::cout << "modbusRTU onRead, data:" << Tool::hex2String(resps[i].base.values.data(), resps[i].base.values.length()) << std::endl;
             onRead(resps[i].src, portName, (int)uuid, resps[i].base.values, resps[i].base.errorCode, error);
             setHalfStatus(uart::HalfStatus::ready);
         }
@@ -46,7 +47,7 @@ namespace modbus::rtu {
         }
         std::string reqData = "";
         packet(uuid, funcCode, startAddr, value, data, reqData);
-        std::cout << "modbusRTU sendData:" << Tool::hex2String(reqData.data(), reqData.length()) << std::endl;
+        // std::cout << "modbusRTU sendData:" << Tool::hex2String(reqData.data(), reqData.length()) << std::endl;
         return SerialPort::send(reqData);
     }
 
@@ -141,7 +142,7 @@ namespace modbus::rtu {
                 resp.base.quantity = dataLen;
                 resp.crc = crc;
                 resp.src = currentbuf_;
-                std::cout << "modbusRTU unpacket:" << Tool::hex2String(currentbuf_.data(), currentbuf_.length()) << std::endl;
+                // std::cout << "modbusRTU unpacket:" << Tool::hex2String(currentbuf_.data(), currentbuf_.length()) << std::endl;
                 resps.emplace_back(resp);
                 currentbuf_.clear();
             } else if (action > 0) {
@@ -184,7 +185,7 @@ namespace modbus::rtu {
                     resp.base.errorCode = currentbuf_[2];
                 }
                 resp.src = currentbuf_;
-                std::cout << "modbusRTU unpacket:" << Tool::hex2String(currentbuf_.data(), currentbuf_.length()) << std::endl;
+                // std::cout << "modbusRTU unpacket:" << Tool::hex2String(currentbuf_.data(), currentbuf_.length()) << std::endl;
                 resps.emplace_back(resp);
                 currentbuf_.clear();
             } else {

@@ -22,8 +22,7 @@ namespace uart {
         Parity parity = Parity::none;
         FlowControl flowControl = FlowControl::none;
         TransferModel model = TransferModel::full;
-        int sendBufSize = 100;  // 发送间隔
-        int HalfStatusTimeout = 5;
+        int sendBufSize = 100;  // 发送队列大小
     };
 
     class Connection {
@@ -45,7 +44,7 @@ namespace uart {
         // 定时器发生之后
         virtual void onTimer(const std::string &portName) = 0;
         // 半双工超时
-        virtual void onHalfTimeout(const std::string &portName) {
+        virtual void onHalfTimeout(const std::string &portName, const int &errorNum) {
         }
         // 用于父类
         virtual void doClose(const std::string &portName, const std::string &error) = 0;
@@ -97,7 +96,7 @@ namespace uart {
     private:
         void startSendTimer();
         void doSendTimer();
-        void startHalfTimer();
+        void doHalfTimer(const boost::system::error_code &ec);
 
     protected:
         void setHalfStatus(HalfStatus status);
@@ -115,6 +114,7 @@ namespace uart {
         // 半双工状态机翻转超时时间
         boost::asio::deadline_timer halfStatusTimer_;
         std::atomic<int> halfStatusTimeout_;
+
         std::queue<std::string> sendBuf_;
         std::mutex sendLock_;
     };

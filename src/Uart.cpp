@@ -1,6 +1,7 @@
 #include "Uart.h"
 
 #include "ConnectionPool.h"
+#include "Tool.h"
 
 namespace uart {
     Session::Session(Connection *conn, boost::asio::io_context &ioContext, int timeout)
@@ -100,12 +101,13 @@ namespace uart {
             int sendBufSize = session_->getConfig().sendBufSize;
             std::lock_guard<std::mutex> lock(sendLock_);
             if (sendBuf_.size() > sendBufSize) {
+                onHalfTimeout(session_->getName(), 0);
                 sendBuf_.pop();
             }
             sendBuf_.push(data);
             return true;
         }
-        return session_->send(data.data(), data.length());
+        return false;
     }
 
     bool SerialPort::setSendInterval(int interval, int halfStatusTimeout) {
@@ -140,26 +142,10 @@ namespace uart {
         sendIntervalTimer_.async_wait(std::bind(&SerialPort::doSendTimer, this));
     }
 
-    void SerialPort::startHalfTimer() {
-        if (stop_) {
-            return;
-        }
-        halfStatusTimer_.cancel();
-        halfStatusTimer_.expires_from_now(boost::posix_time::milliseconds(halfStatusTimeout_.load()));
-        halfStatusTimer_.async_wait([this]() {
-            if (session_->getConfig().model == TransferModel::full) {
-                return;
-            }
-            if (halfStatus_.load() == HalfStatus::wait) {
-                halfStatus_.store(HalfStatus::ready);
-                onHalfTimeout(session_->getName());
-            }
-        });
-    }
-
     void SerialPort::doSendTimer() {
         // 半双工需等待状态机翻转,才能发送
         if (session_->getConfig().model == TransferModel::half && halfStatus_.load() == HalfStatus::wait) {
+            startSendTimer();
             return;
         }
         std::string data;
@@ -171,19 +157,34 @@ namespace uart {
             }
         }
         if (!data.empty() && session_.get()) {
-            session_->send(data.data(), data.length());
             if (session_->getConfig().model == TransferModel::half) {
                 setHalfStatus(HalfStatus::wait);
             }
+            // std::cout << "modbusRTU sendData:" << Tool::hex2String(data.data(), data.length()) << std::endl;
+            session_->send(data.data(), data.length());
         }
         startSendTimer();
+    }
+
+    void SerialPort::doHalfTimer(const boost::system::error_code &ec) {
+        if (ec == boost::asio::error::operation_aborted) {
+            return;  // 定时器被取消，直接返回
+        }
+        if (session_->getConfig().model == TransferModel::full) {
+            return;
+        }
+        if (halfStatus_.load() == HalfStatus::wait) {
+            halfStatus_.store(HalfStatus::ready);
+            onHalfTimeout(session_->getName(), 1);
+        }
     }
 
     void SerialPort::setHalfStatus(HalfStatus status) {
         if (session_->getConfig().model == TransferModel::half) {
             halfStatus_.store(status);
             if (status == HalfStatus::wait) {
-                startHalfTimer();
+                halfStatusTimer_.expires_from_now(boost::posix_time::milliseconds(halfStatusTimeout_.load()));
+                halfStatusTimer_.async_wait([this](auto ec) { doHalfTimer(ec); });
             } else {
                 halfStatusTimer_.cancel();
             }

@@ -49,7 +49,6 @@ namespace net::socket {
         if (!error) {
             syncConnect(endpoints);
         } else {
-            std::cout << error.what() << std::endl;
             startTimer();
             if (error != boost::asio::error::operation_aborted) {
                 onResolver(error.what());
@@ -106,7 +105,7 @@ namespace net::socket {
             session->close(err);
         }
         if (error != boost::asio::error::operation_aborted) {
-            onConnect(ip, port, err);
+            onConnect(host_, port_, err);
         }
     }
 
